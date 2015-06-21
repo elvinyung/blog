@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes" ?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>llvn</title>
+    <link>http://blog.elvinyung.com/</link>
+    <description>Recent content on llvn</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>en-us</language>
+    <lastBuildDate>Sun, 21 Jun 2015 05:36:55 -0700</lastBuildDate>
+    <atom:link href="http://blog.elvinyung.com/index.xml" rel="self" type="application/rss+xml" />
+    
+    <item>
+      <title>Obligatory &#34;first post&#34; post</title>
+      <link>http://blog.elvinyung.com/post/firstpost/</link>
+      <pubDate>Sun, 21 Jun 2015 05:36:55 -0700</pubDate>
+      
+      <guid>http://blog.elvinyung.com/post/firstpost/</guid>
+      <description>&lt;p&gt;I finally succumbed to the temptation and made a blog.&lt;/p&gt;
+
+&lt;p&gt;Because, y&amp;rsquo;know, for the sake of posterity, my future selves need to know how stupid I was in 2015.&lt;/p&gt;
+</description>
+    </item>
+    
+  </channel>
+</rss>
