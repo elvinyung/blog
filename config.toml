@@ -1,0 +1,8 @@
+baseurl = "http://blog.elvinyung.com/"
+languageCode = "en-us"
+title = "llvn"
+theme = "vienna"
+
+[params]
+  subtitle = "Basically, Elvin complains about various tech things"
+  author = "Elvin Yung"
