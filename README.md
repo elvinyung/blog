@@ -2,6 +2,7 @@
 ### by [Elvin Yung](https://github.com/elvinyung)
 A blog.
 
+Check it out [here](http://blog.elvinyung.com).
 
 ### Instructions
 Mostly a note to self.
