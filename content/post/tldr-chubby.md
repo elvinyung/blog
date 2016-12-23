@@ -43,7 +43,7 @@ In most of the Paxos implementations I've seen, the cluster leader proposes all 
 
 Where in Chubby do you get *state*? You guessed it -- the key-value pairs.
 
-(As a side node, why doesn't everyone use Paxos to replicate state? The problem is *latency* -- Paxos needs a lot of network round trips to even commit a transition. In contrast, a simpler scheme like *asynchronous streaming*, where replicas just try to catch up to the leader at their own pace, needs roughly half as many round trips.)
+(As a side node, why doesn't everyone use Paxos to replicate state? The problem is *latency* -- Paxos needs a lot of network round trips to even commit a transition. In contrast, a simpler scheme like *asynchronous streaming*, where replicas just try to catch up to the leader at their own pace, doesn't need any round trips because replication is done separately from writes, sacrificing the strong consistency of Paxos.)
 
 ## Chubby's state
 So... I kind of lied when I said that Chubby is "just" a key-value store.
