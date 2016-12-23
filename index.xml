@@ -59,7 +59,9 @@
 
 &lt;p&gt;Where in Chubby do you get &lt;em&gt;state&lt;/em&gt;? You guessed it &amp;ndash; the key-value pairs.&lt;/p&gt;
 
-&lt;p&gt;(As a side node, why doesn&amp;rsquo;t everyone use Paxos to replicate state? The problem is &lt;em&gt;latency&lt;/em&gt; &amp;ndash; Paxos needs a lot of network round trips to even commit a transition. In contrast, a simpler scheme like &lt;em&gt;asynchronous streaming&lt;/em&gt;, where replicas just try to catch up to the leader at their own pace, doesn&amp;rsquo;t need any round trips because replication is done separately from writes, sacrificing the strong consistency of Paxos.)&lt;/p&gt;
+&lt;p&gt;(As a side node, why doesn&amp;rsquo;t everyone use Paxos to replicate state? The problem is &lt;em&gt;latency&lt;/em&gt; &amp;ndash; Paxos needs a lot of network round trips to even commit a transaction. In contrast, a simpler scheme like &lt;em&gt;asynchronous streaming&lt;/em&gt;, where replicas just try to catch up to the leader at their own pace, only needs a single round trip to commit a transaction because replication is done separately from writes, sacrificing the strong consistency of Paxos.)&lt;/p&gt;
+
+&lt;p&gt;(It should be noted that Chubby&amp;rsquo;s implementation of standard multi-Paxos eventually ended up being &lt;a href=&#34;https://static.googleusercontent.com/media/research.google.com/en//archive/paxos_made_live.pdf&#34;&gt;a bit more complicated&lt;/a&gt; than the one described above. Specifically, there are a few modifications to deal with things like changing the cluster size and garbage collecting the transaction log.)&lt;/p&gt;
 
 &lt;h2 id=&#34;chubby-s-state:73d5e418b2d41f3188d00c1839bca50e&#34;&gt;Chubby&amp;rsquo;s state&lt;/h2&gt;
 
