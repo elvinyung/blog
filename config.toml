@@ -1,7 +1,7 @@
 baseurl = "http://blog.elvinyung.com/"
 languageCode = "en-us"
 title = "llvn"
-theme = "tachyons"
+theme = "vienna"
 
 [params]
   subtitle = "This blog is eventually consistent with my brain."
