@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en-us">
+<head prefix="og: http://ogp.me/ns#">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+  <meta property="og:title" content=" TL;DR: Chubby &middot;  llvn" />
+  
+  <meta property="og:site_name" content="llvn" />
+  <meta property="og:url" content="http://localhost:1313/post/tldr-chubby/" />
+  
+  
+  <meta property="og:type" content="article" />
+  
+  <meta property="og:article:published_time" content="2016-12-23T00:16:00-08:00" />
+  
+  
+
+  <title>
+     TL;DR: Chubby &middot;  llvn
+  </title>
+
+  <link rel="stylesheet" href="http://localhost:1313/css/bootstrap.min.css" />
+  <link rel="stylesheet" href="http://localhost:1313/css/main.css" />
+  <link rel="stylesheet" href="http://localhost:1313/css/font-awesome.min.css" />
+  <link rel="stylesheet" href="http://localhost:1313/css/github.css" />
+  <link rel="stylesheet" href="//fonts.googleapis.com/css?family=Source+Sans+Pro:200,300,400" type="text/css">
+  <link rel="shortcut icon" href="http://localhost:1313/images/favicon.ico" />
+  <link rel="apple-touch-icon" href="http://localhost:1313/images/apple-touch-icon.png" />
+  
+</head>
+<body>
+    <header class="global-header"  style="background-image:url( /images/bg.jpg )">
+    <section class="header-text">
+      <h1><a href="http://localhost:1313/">llvn</a></h1>
+      
+      <div class="tag-line">
+        This blog is eventually consistent with my brain.
+      </div>
+      
+      <div class="sns-links hidden-print">
+  
+  
+  
+  
+  
+  
+  
+  
+  
+</div>
+
+      
+      <a href="http://localhost:1313/" class="btn-header btn-back hidden-xs">
+        <i class="fa fa-angle-left" aria-hidden="true"></i>
+        &nbsp;Home
+      </a>
+      
+      
+    </section>
+  </header>
+  <main class="container">
+
+
+<article>
+  <header>
+    <h1 class="text-primary">TL;DR: Chubby</h1>
+    <div class="post-meta clearfix">
+      <div class="post-date pull-left">
+        Posted on
+        <time datetime="2016-12-23T00:16:00-08:00">
+          Dec 23, 2016
+        </time>
+      </div>
+      <div class="pull-right">
+        
+      </div>
+    </div>
+  </header>
+  <section>
+    
+
+<p>I think it&rsquo;s a generally agreed-upon sentiment that papers are Too Damn Hard to read. Which is really very unfortunate, because I think that reading peer-reviewed papers is basically the only way to <em>really</em> learn about a lot of things.</p>
+
+<p>I&rsquo;m not really at a place to be able to change that. But I <em>can</em> try and do the second-best thing: make it easy for others to learn from them. So that&rsquo;s what I&rsquo;ll do.</p>
+
+<p>I&rsquo;ll start with <a href="https://research.google.com/archive/chubby-osdi06.pdf">The Chubby Lock Service for Loosely-Coupled Distributed Systems</a> by Mike Burrows. It was presented at OSDI 2006. Chubby itself is not open source &ndash; so all we have to go on for how it works is the paper itself &ndash; but every tech company at some sort of nontrivial scale <em>probably</em> runs some sort of Chubby-equivalent.</p>
+
+<p>More importantly, I think Chubby is interesting on a large part because the paper has one of the biggest <code>perceived complexity : actual complexity</code> ratios.</p>
+
+<p>(You should know that I&rsquo;m going to try to explain things in a way that I think makes this sound the easiest, instead of the most correct. Of course, the explanations should not be <em>incorrect</em>.)</p>
+
+<h2 id="what-chubby-actually-is:73d5e418b2d41f3188d00c1839bca50e">What Chubby Actually Is</h2>
+
+<p>Alright, are you ready for this?</p>
+
+<p>Chubby is a <em>key-value store</em> that uses Paxos to keep copies.</p>
+
+<p>If you only wanted to know was what Chubby is, you can stop reading now.</p>
+
+<h2 id="paxos:73d5e418b2d41f3188d00c1839bca50e">Paxos</h2>
+
+<p>What are the implications of using Paxos?</p>
+
+<p><a href="http://research.microsoft.com/en-us/um/people/lamport/pubs/paxos-simple.pdf">Paxos</a> is basically a technique to make a bunch of separate nodes (i.e. processes, or threads, or actors, or pick your own word) agree on some <em>state</em>. In other words, pretend that every participating node has some copy of a state machine. Paxos ensures that <em>every node applies every transition to their copy of the state machine in the same order</em>.</p>
+
+<p>It basically works like this:</p>
+
+<ol>
+<li>You have a <em>cluster</em> of some number of nodes. One node is designated the <em>leader</em>. (Chubby uses the term <em>cell</em> instead of <em>cluster</em>, but I think the term <em>cluster</em> is more common, more intuitive and means the same thing.)</li>
+<li>The leader proposes a transition (numbered <code>n</code>) to the state machine to every other node.</li>
+<li>When enough of the other nodes acknowledges this to make up a majority (or <em>quorum</em>), the transition is committed. As a consequence, no transition with the number <code>n</code> or less can be committed, since there can exist no other majority to vote for a different transition with the number <code>n</code>.</li>
+</ol>
+
+<p>I glossed over how <em>leader election</em> works in the steps above, but it uses essentially the same logic. The main difference is that, basically, any node can propose themselves for as a leader, so the first node that gets a quorum vote becomes the leader. Additionally, in Chubby, the master has a <em>lease</em> &ndash; basically a leadership term of a few seconds, after which it needs to renew its lease by getting other nodes to vote for it again. Most importantly, this means that if the current leader goes down, the lease runs out and another leader is elected, with an up-to-date copy of the data.</p>
+
+<p>(This actually describes a variant of Paxos called <em>multi-Paxos</em>. The <em>basic</em> variant of Paxos essentially has a leader election after a every state transition.)</p>
+
+<p>A consequence of how quorums work is that in a Paxos cluster, a quorum needs to be alive for any progress to be made. A Chubby cluster normally consists of five nodes, so any two can be down and the state can still be updated.</p>
+
+<p>In most of the Paxos implementations I&rsquo;ve seen, the cluster leader proposes all write requests and serves all read requests &ndash; Chubby is no different. The natural conclusion of this is that a using Paxos-distributed state machine <em>feels</em> like you&rsquo;re talking to a single process, because for the most part, it is.</p>
+
+<p>Where in Chubby do you get <em>state</em>? You guessed it &ndash; the key-value pairs.</p>
+
+<p>(As a side node, why doesn&rsquo;t everyone use Paxos to replicate state? The problem is <em>latency</em> &ndash; Paxos needs a lot of network round trips to even commit a transition. In contrast, a simpler scheme like <em>asynchronous streaming</em>, where replicas just try to catch up to the leader at their own pace, needs roughly half as many round trips.)</p>
+
+<h2 id="chubby-s-state:73d5e418b2d41f3188d00c1839bca50e">Chubby&rsquo;s state</h2>
+
+<p>So&hellip; I kind of lied when I said that Chubby is &ldquo;just&rdquo; a key-value store.</p>
+
+<p>Chubby&rsquo;s API makes it look more like a Unix filesystem. The keys look like <code>/ls/foo/wombat/pouch</code> (<code>/ls</code> is the root, and it stands for <em>lock service</em>), and the API has methods like <code>Open()</code> and <code>Close()</code>.</p>
+
+<p>The differences are that Chubby only has <em>nodes</em> that are equivalent to Unix&rsquo;s <em>files</em> and <em>directories</em> (basically lists containing their children&rsquo;s names), so nothing like a symlink or hard link. There&rsquo;s also no concept of operations like append and seek, so files can only be completely read or completely overwritten &ndash; a design that makes it practical to store only very small files.</p>
+
+<p>An interesting optimization is that nodes can&rsquo;t be moved, only created or deleted. The paper mentions that although it hasn&rsquo;t been needed yet, it also opens them to the possibility of &ldquo;sharding&rdquo; data between different Chubby instances, so that, for example, <code>/ls/foo</code> and everything in it is in its own Chubby cluster, but <code>/ls/bar</code> and everything in it is put into a separate Chubby cluster. (Interestingly, Google&rsquo;s <a href="http://cidrdb.org/cidr2011/Papers/CIDR11_Paper32.pdf">Megastore</a>, published 5 years later, does something like this.) Not allowing moves makes it easier to hide the distributed nature of Chubby, since moving lots of data between machines is hard and requires lots of synchronization.</p>
+
+<p>Things that I&rsquo;ve kind of skipped over:</p>
+
+<ul>
+<li>Ephemeral nodes: It&rsquo;s basically a node that only exists as long as there&rsquo;s at least one session that has it open. The implications of an ephemeral node is that it can be used to indicate that a client is alive.</li>
+<li>Access control: it&rsquo;s done by basically a slightly simpler version of Unix filesystem permissions.</li>
+<li>The Chubby client apparently does even more to make it seem like a file system. When clients open a file or directory, they get an object called a <em>handle</em>, which is similar to a Unix file descriptor.</li>
+<li>Events: push notify clients on things that have happened in Chubby, such as a lock being acquired or a file being edited.</li>
+<li>Caching: The Chubby client library apparently aggressively caches data from the Chubby cluster. The cool thing is that data is only ever evicted (presumably upon an event), never updated &ndash; basically, keys are lazily cached. The client&rsquo;s view of the world is either up-to-date or unavailable (i.e if it loses connection), keeping with the theme of consistency over availability.</li>
+<li>Sessions: Clients maintain sessions by sending <code>KeepAlive</code> RPCs to Chubby. This constitutes about 93% of the example Chubby cluster&rsquo;s requests.</li>
+</ul>
+
+<h2 id="locks:73d5e418b2d41f3188d00c1839bca50e">Locks</h2>
+
+<p>Little does anyone know, the paper has the words &ldquo;lock service&rdquo; in the title. Let&rsquo;s look at how that works!</p>
+
+<p>The Chubby handle API has the methods <code>Acquire()</code>, <code>TryAcquire()</code>, and <code>Release()</code> - these methods implement a <a href="https://en.wikipedia.org/wiki/Readers%E2%80%93writer_lock">reader-writer lock</a> on each node. It seems like the hierarchical nature of the Chubby data model means that acquiring a lock on a directory named <code>/ls/foo</code> means acquiring a lock on things inside it, which includes <code>/ls/foo/wombat/pouch</code>.</p>
+
+<p>Chubby locks are <em>advisory</em> instead of <em>mandatory</em>. It&rsquo;s mentioned that Chubby locks are generally used to protect non-Chubby data or resources, so mandatory locks within Chubby aren&rsquo;t that useful, and mandatory locks that integrate with clients are too expensive.</p>
+
+<p>A client holding a Chubby lock can request a <em>sequencer</em>, which is essentially a serialized &ldquo;snapshot&rdquo; of the lock. It can then pass the sequencer to operations that use that lock, and those operations will only succeed if the lock still has that state.</p>
+
+<p>What if the client holding a lock loses its connection to Chubby? Instead of automatically releasing the lock, Chubby will hold the lock for some delay (preconfigured by the client). This means that if the client reconnects, it can reacquire the lock.</p>
+
+<h2 id="usage:73d5e418b2d41f3188d00c1839bca50e">Usage</h2>
+
+<p>To be sure, a highly consistent key-value store is a very generalized thing. So it&rsquo;s not really surprising that Chubby is widely used within Google for lots of different use cases.</p>
+
+<ul>
+<li>Leader election: The paper mentions that it became a common pattern to use Chubby as a way for clusters of other services to elect leaders. It&rsquo;s done like this: all the nodes try to grab a Chubby lock. Whoever acquires a lock first becomes the leader.</li>
+<li>As a name service: There&rsquo;s an entire section that talks about how Chubby came to replace DNS as the main way to <em>discover</em> servers within Google. Basically, since DNS is a time-based cache, there&rsquo;s no nice way of doing fast updates. In Chubby, you can accurately map keys to servers (i.e. host and port information) using ephemeral nodes.
+
+<ul>
+<li>A corollary of this is that in systems that need to shard data, the shard metadata is put onto Chubby. I have heard that this is true with <a href="http://vitess.io/">Vitess</a>.</li>
+<li>A lot of other Google papers mention doing this. GFS and Bigtable are the main ones that come to mind. The Borg paper mentions a &ldquo;Borg name service&rdquo; that&rsquo;s built on Chubby.</li>
+</ul></li>
+</ul>
+
+<p>The most interesting thing is that Chubby is basically used as a &ldquo;distributed global variables&rdquo; system.</p>
+
+<p>The paper mentions that most teams at Google share the same Chubby cluster (and therefore namespace), but initially, developers didn&rsquo;t fully understand their usage, and caused many outages (and presumably tears). It&rsquo;s a very entertaining section on how important it is to either educate or weed out bad users, even internally.</p>
+
+<p>A lot of the misconception around Chubby internally at Google seems to be from not being aware of the <a href="https://en.wikipedia.org/wiki/CAP_theorem">CAP theorem</a>. Basically, people assume that Chubby is both strongly consistent and (almost) always available, which is <a href="https://codahale.com/you-cant-sacrifice-partition-tolerance/">impossible</a>.</p>
+
+<h2 id="conclusion:73d5e418b2d41f3188d00c1839bca50e">Conclusion</h2>
+
+<p>I&rsquo;ve glossed over a lot of the details of the paper, but hopefully I&rsquo;ve given you a decent idea of how Chubby works, and what it&rsquo;s used for within Google!</p>
+
+<p>Chubby has inspired a whole bunch of open-source projects, many of which are being used for the same things as mentioned by the paper. The most well-known one is <a href="https://zookeeper.apache.org/">Zookeeper</a>, which <a href="http://nerds.airbnb.com/smartstack-service-discovery-cloud/">seems</a> <a href="https://engineering.pinterest.com/blog/zookeeper-resilience-pinterest">to</a> be <a href="https://groups.google.com/forum/#!topic/mechanical-sympathy/GmyKrZn2Zus">popular</a>, but there&rsquo;s also <a href="https://github.com/coreos/etcd">etcd</a>, <a href="https://www.consul.io/">Consul</a>, and <a href="https://github.com/ha/doozerd">Doozer</a>, among many others.</p>
+
+  </section>
+  <footer>
+    
+    <section class="author-info row">
+      <div class="author-avatar col-md-2">
+        
+      </div>
+      <div class="author-meta col-md-6">
+        
+        <h1 class="author-name text-primary">Elvin Yung</h1>
+        
+        
+      </div>
+      
+    </section>
+    <ul class="pager">
+      
+      <li class="previous disabled"><a href="#"><span aria-hidden="true">&larr;</span> Older</a></li>
+      
+      
+      <li class="next disabled"><a href="#">Newer <span aria-hidden="true">&rarr;</span></a></li>
+      
+    </ul>
+  </footer>
+</article>
+
+  </main>
+  <footer class="container global-footer">
+    <div class="copyright-note pull-left">
+      
+    </div>
+    <div class="sns-links hidden-print">
+  
+  
+  
+  
+  
+  
+  
+  
+  
+</div>
+
+  </footer>
+
+  <script src="http://localhost:1313/js/highlight.pack.js"></script>
+  <script>
+    hljs.initHighlightingOnLoad();
+  </script>
+  
+  
+<script data-no-instant>document.write('<script src="http://'
+        + (location.host || 'localhost').split(':')[0]
+		+ ':1313/livereload.js?mindelay=10"></'
+        + 'script>')</script></body>
+</html>
+
