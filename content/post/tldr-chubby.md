@@ -1,6 +1,6 @@
 +++
-date = "2016-12-22T18:40:12-08:00"
-draft = true
+date = "2016-12-23T00:16:00-08:00"
+draft = false
 title = "TL;DR: Chubby"
 
 +++
