@@ -1,8 +1,0 @@
-baseurl = "http://blog.elvinyung.com/"
-languageCode = "en-us"
-title = "llvn"
-theme = "vienna"
-
-[params]
-  subtitle = "This blog is eventually consistent with my brain."
-  author = "Elvin Yung"
