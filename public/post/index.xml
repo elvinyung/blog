@@ -2,19 +2,19 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>Posts on llvn</title>
-    <link>http://localhost:1313/post/</link>
+    <link>http://blog.elvinyung.com/post/</link>
     <description>Recent content in Posts on llvn</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
     <lastBuildDate>Fri, 23 Dec 2016 00:16:00 -0800</lastBuildDate>
-    <atom:link href="http://localhost:1313/post/index.xml" rel="self" type="application/rss+xml" />
+    <atom:link href="http://blog.elvinyung.com/post/index.xml" rel="self" type="application/rss+xml" />
     
     <item>
       <title>TL;DR: Chubby</title>
-      <link>http://localhost:1313/post/tldr-chubby/</link>
+      <link>http://blog.elvinyung.com/post/tldr-chubby/</link>
       <pubDate>Fri, 23 Dec 2016 00:16:00 -0800</pubDate>
       
-      <guid>http://localhost:1313/post/tldr-chubby/</guid>
+      <guid>http://blog.elvinyung.com/post/tldr-chubby/</guid>
       <description>
 
 &lt;p&gt;I think it&amp;rsquo;s a generally agreed-upon sentiment that papers are Too Damn Hard to read. Which is really very unfortunate, because I think that reading peer-reviewed papers is basically the only way to &lt;em&gt;really&lt;/em&gt; learn about a lot of things.&lt;/p&gt;
