@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes" ?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Tldr on llvn</title>
+    <link>http://localhost:1313/tags/tldr/</link>
+    <description>Recent content in Tldr on llvn</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>en-us</language>
+    <lastBuildDate>Sun, 01 Jan 2017 18:43:50 -0500</lastBuildDate>
+    <atom:link href="http://localhost:1313/tags/tldr/index.xml" rel="self" type="application/rss+xml" />
+    
+    <item>
+      <title>TL;DR: The Case For Shared Nothing</title>
+      <link>http://localhost:1313/post/tldr-shared-nothing/</link>
+      <pubDate>Sun, 01 Jan 2017 18:43:50 -0500</pubDate>
+      
+      <guid>http://localhost:1313/post/tldr-shared-nothing/</guid>
+      <description>&lt;blockquote&gt;
+&lt;p&gt;It appears that most data base users find data base design to require substantial wizardry.&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;&lt;em&gt;Shared nothing&lt;/em&gt; architectures are prevalent in today&amp;rsquo;s web architectures. It&amp;rsquo;s easy to see why: with less shared resources, less coordination is needed, and the problem becomes exceedingly &lt;a href=&#34;https://en.wikipedia.org/wiki/Embarrassingly_parallel&#34;&gt;embarrassingly parallel&lt;/a&gt;. From a scalability standpoint, this is awesome. It means that you can arbitrarily throw more machines at the problem, and see proportional speedup.&lt;/p&gt;
+
+&lt;p&gt;One of earliest people who made this observation is Michael Stonebraker, a database pioneer in many ways.&lt;/p&gt;
+
+&lt;p&gt;In &lt;a href=&#34;http://db.cs.berkeley.edu/papers/hpts85-nothing.ps.Z&#34;&gt;The Case For Shared Nothing&lt;/a&gt;, Stonebraker&lt;/p&gt;
+</description>
+    </item>
+    
+  </channel>
+</rss>
