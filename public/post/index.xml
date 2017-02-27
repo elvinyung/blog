@@ -6,8 +6,176 @@
     <description>Recent content in Posts on llvn</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
-    <lastBuildDate>Fri, 23 Dec 2016 00:16:00 -0800</lastBuildDate>
+    <lastBuildDate>Sun, 26 Feb 2017 16:03:52 -0500</lastBuildDate>
     <atom:link href="http://blog.elvinyung.com/post/index.xml" rel="self" type="application/rss+xml" />
+    
+    <item>
+      <title>TL;DR: Dynamo: Amazon’s Highly Available Key-value Store</title>
+      <link>http://blog.elvinyung.com/post/tldr-dynamo/</link>
+      <pubDate>Sun, 26 Feb 2017 16:03:52 -0500</pubDate>
+      
+      <guid>http://blog.elvinyung.com/post/tldr-dynamo/</guid>
+      <description>
+
+&lt;p&gt;At &lt;a href=&#34;http://www.sosp2007.org/&#34;&gt;SOSP 2007&lt;/a&gt;, Amazon presented &lt;em&gt;&lt;a href=&#34;https://s3.amazonaws.com/AllThingsDistributed/sosp/amazon-dynamo-sosp2007.pdf&#34;&gt;Dynamo: Amazon’s Highly Available Key-value Store&lt;/a&gt;&lt;/em&gt;. It&amp;rsquo;s the thing that &amp;ldquo;launched a thousand NoSQL databases&amp;rdquo; &amp;ndash; along with Google&amp;rsquo;s Bigtable, it kicked off the NoSQL movement of the late 2000s and early 2010s.&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;../tldr-chubby&#34;&gt;Last time&lt;/a&gt;, we looked at Google&amp;rsquo;s Chubby, which provides a key-value store replicated using Paxos for strong consistency. In many ways, Dynamo is the opposite of Chubby.&lt;/p&gt;
+
+&lt;p&gt;Dynamo &amp;ndash; not to be confused with Dynamo&lt;em&gt;DB&lt;/em&gt;, which was inspired by Dynamo&amp;rsquo;s design &amp;ndash; is a key-value store designed to be scalable and highly-available. In &lt;a href=&#34;https://jvns.ca/blog/2016/10/21/consistency-vs-availability/&#34;&gt;CAP theorem&lt;/a&gt; terms, Chubby is a CP system, whereas Dynamo is on the other end, falling squarely within the category of AP systems.&lt;/p&gt;
+
+&lt;p&gt;The core rationale that drives Dynamo&amp;rsquo;s design principles is the observation that the &lt;em&gt;availability&lt;/em&gt; of a system directly correlates to the number of customers served. On the other hand, imperfect &lt;em&gt;consistency&lt;/em&gt; can usually be masked, and resolved in the backend without the customer knowing about it. Informed by this main idea, Dynamo aggressively optimizes for availability, and makes a few very interesting tradeoffs.&lt;/p&gt;
+
+&lt;p&gt;The Dynamo design is highly influential. It inspired a large number of NoSQL databases (sometimes lumped together as the category of &lt;em&gt;Dynamo systems&lt;/em&gt;), like &lt;a href=&#34;https://cassandra.apache.org/&#34;&gt;Cassandra&lt;/a&gt;, &lt;a href=&#34;http://basho.com/products/&#34;&gt;Riak&lt;/a&gt;, and &lt;a href=&#34;http://www.project-voldemort.com/voldemort/&#34;&gt;Voldemort&lt;/a&gt; &amp;ndash; not to mention Amazon&amp;rsquo;s own &lt;a href=&#34;https://aws.amazon.com/dynamodb/&#34;&gt;DynamoDB&lt;/a&gt;. The core architecture has even influenced projects like &lt;a href=&#34;http://uber.github.io/ringpop/&#34;&gt;Ringpop&lt;/a&gt; (a load balancer) and &lt;a href=&#34;https://github.com/leo-project/leofs&#34;&gt;LeoFS&lt;/a&gt; (a distributed filesystem).&lt;/p&gt;
+
+&lt;p&gt;In this post I&amp;rsquo;ll spend some time talking about the core design of Dynamo (occasionally cross-referencing some open-source Dynamo systems), and how it influenced the software industry.&lt;/p&gt;
+
+&lt;p&gt;(Usual disclaimer that I&amp;rsquo;ll be focusing on making things digestible, and not strictly correct.)&lt;/p&gt;
+
+&lt;h2 id=&#34;design-goals:007c64e27a60065cbcf00eb83e5f6197&#34;&gt;Design goals&lt;/h2&gt;
+
+&lt;p&gt;Like I mentioned above, the goal of Dynamo is, above all else, to be highly available. In summary, they came up with these fundamental properties:&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;The system should be &lt;strong&gt;incrementally scalable&lt;/strong&gt;. You should be able to just throw a machine into the system, and see proportional improvement.&lt;/li&gt;
+&lt;li&gt;There should be no &lt;strong&gt;leader&lt;/strong&gt; process. A leader is a single point of failure, which bottlenecks the system at some point, and makes it harder to scale the system. If every node is the same, that complexity goes away.&lt;/li&gt;
+&lt;li&gt;Data should be &lt;strong&gt;optimistically replicated&lt;/strong&gt;, which means that instead of incurring write-time costs to ensure correctness throughout the system, inconsistencies should be resolved at some other time.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Ultimately, Dynamo was built around six core techniques:&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Consistent hashing&lt;/strong&gt; to shard data between nodes, and make it easy to add new nodes.&lt;/li&gt;
+&lt;li&gt;A &lt;strong&gt;gossip protocol&lt;/strong&gt; for to keep track of the cluster state, and make the system &amp;ldquo;always-writeable&amp;rdquo; by using &lt;strong&gt;hinted handoff&lt;/strong&gt;.&lt;/li&gt;
+&lt;li&gt;Replicate writes to a &lt;strong&gt;sloppy quorum&lt;/strong&gt; of other nodes in the system, instead of a strict majority quorum like Paxos.&lt;/li&gt;
+&lt;li&gt;Since there are no write-time guarantees that nodes agree on values, resolve potential conflicts using other mechanisms:
+
+&lt;ul&gt;
+&lt;li&gt;Use &lt;strong&gt;vector clocks&lt;/strong&gt; to keep track of value history, and reconcile divergent histories at read time.&lt;/li&gt;
+&lt;li&gt;In the background, use &lt;strong&gt;Merkle trees&lt;/strong&gt; to resolve conflicts between different nodes.&lt;/li&gt;
+&lt;/ul&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h2 id=&#34;data-model:007c64e27a60065cbcf00eb83e5f6197&#34;&gt;Data model&lt;/h2&gt;
+
+&lt;p&gt;In the interest of scalability, Dynamo exposes only an extremely barebones interface: you can &lt;code&gt;get()&lt;/code&gt; a key, and you can &lt;code&gt;put()&lt;/code&gt; to a key. Values are treated as opaque blobs. In other words, Dynamo provides massive scalability and not much more.&lt;/p&gt;
+
+&lt;p&gt;A simple key-value data model is great because because it&amp;rsquo;s &lt;a href=&#34;https://en.wikipedia.org/wiki/Embarrassingly_parallel&#34;&gt;embarrassingly parallel&lt;/a&gt;: since a single-key operation doesn&amp;rsquo;t depend anything other than its value, you can split up the workload across arbitrarily many processes easily. But this is a far cry from the traditional relational database that it replaces, that most people are used to.&lt;/p&gt;
+
+&lt;p&gt;In a standard RDBMS, you have a bunch of tuples, organized into a bunch of relations. On top of that, you get features like foreign keys, joins, a rich query language, and transactions with correctness guarantees. But these features are very expensive to implement in a system that&amp;rsquo;s potentially spread across multiple machines in multiple continents, especially when Dynamo was first being developed, more than a decade ago.&lt;/p&gt;
+
+&lt;p&gt;A consequence of this is that although Dynamo is supposed to replace relational databases, what it really does is push up those responsibilities up to the application. Using a Dynamo system, if application developers need to make sure that their data is written correctly into the system, or correctly references things, they have to write their own logic to do it.&lt;/p&gt;
+
+&lt;p&gt;Subsequent Dynamo systems are a bit better in this regard; Cassandra, Riak and DynamoDB all have a real type system. (They still lack things like foreign keys, but it&amp;rsquo;s more understandable because referential integrity across a distributed system is &lt;em&gt;really&lt;/em&gt; slow.)&lt;/p&gt;
+
+&lt;h2 id=&#34;consistent-hashing:007c64e27a60065cbcf00eb83e5f6197&#34;&gt;Consistent hashing&lt;/h2&gt;
+
+&lt;p&gt;You probably already know how a hash table works: you have an array of buckets; to figure out which bucket a key goes into, you pass it through a hash function, and the result modulo the size of the table is the index of the bucket that you want. Hashing is a great way to map arbitrary keys to a finite range.&lt;/p&gt;
+
+&lt;p&gt;But you incur the cost of occasionally having to rebuild the entire data structure whenever you need to resize it. This is fine for small in-memory hash tables, but with a multi-terabyte store like Dynamo, it&amp;rsquo;s disastrous, and could mean hours of downtime.&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;Consistent hashing&lt;/strong&gt; is one way to tackle this issue. The idea is that instead of a one-to-one mapping between index and bucket, a contiguous range of indices maps to a bucket. Whenever you want to add a bucket, you just split an existing index range.&lt;/p&gt;
+
+&lt;p&gt;The entire range is treated as a &lt;em&gt;ring&lt;/em&gt;, wrapping around after the maximum index. Every bucket is assigned a random point on the ring. To figure out which bucket a key should go into, you hash your key to figure out the index, and then you &lt;em&gt;walk clockwise&lt;/em&gt; along the ring until you reach a bucket &amp;ndash; that bucket is where the key should go.&lt;/p&gt;
+
+&lt;p&gt;(Astute readers will note that the worst case performance with a naive implementation is when you have a single bucket assigned to the biggest possible index, and you have to traverse the entire ring to get to it. In real life, hash rings are usually implemented as a balanced binary tree, to avoid this problem.)&lt;/p&gt;
+
+&lt;p&gt;Awesome, this means that consistent hashing can be done &lt;em&gt;incrementally&lt;/em&gt;: a new bucket would get randomly placed onto the ring as normal, which means that it takes over a portion of some existing bucket. If there are &lt;code&gt;k&lt;/code&gt; keys and &lt;code&gt;n&lt;/code&gt; buckets, this means that on average you only need to shift around &lt;code&gt;k/n&lt;/code&gt; keys.&lt;/p&gt;
+
+&lt;h3 id=&#34;virtual-nodes:007c64e27a60065cbcf00eb83e5f6197&#34;&gt;Virtual nodes&lt;/h3&gt;
+
+&lt;p&gt;There are two main problems with the naive consistent hashing algorithm that we just looked at, and they both have to do with how the key-space is split up. First, even though we expect a uniform distribution, we probably won&amp;rsquo;t see a very even distribution &lt;a href=&#34;https://en.wikipedia.org/wiki/Law_of_large_numbers&#34;&gt;unless we have a lot of nodes&lt;/a&gt;. Second, we can&amp;rsquo;t control how much data a machine stores: a beefy machine might get the same &amp;ldquo;share&amp;rdquo; of keys as a weaker machine. A psuedorandom number generator is a capricious and fickle thing.&lt;/p&gt;
+
+&lt;p&gt;Dynamo deals with both of these issues very nicely. A physical machine actually isn&amp;rsquo;t just a single node; it&amp;rsquo;s treated as multiple &lt;em&gt;virtual&lt;/em&gt; nodes, configurable on a per-machine basis. This makes it more likely for the keys to be distributed evenly, and a machine with more resources can easily be configured to store more data, just by increasing the number of virtual nodes it gets allocated. Pretty clever.&lt;/p&gt;
+
+&lt;p&gt;The paper doesn&amp;rsquo;t actually talk about this, but one problem with consistent hashing is that it doesn&amp;rsquo;t explicitly deal with &lt;em&gt;hotspots&lt;/em&gt;. If a specific range is being accessed more often than others, there isn&amp;rsquo;t a way to split up just that range. You add more machines and hope for the best. A Cassandra &lt;a href=&#34;http://www.datastax.com/dev/blog/we-shall-have-order&#34;&gt;blog post&lt;/a&gt; suggests to choose your sharding key carefully.&lt;/p&gt;
+
+&lt;h2 id=&#34;replication:007c64e27a60065cbcf00eb83e5f6197&#34;&gt;Replication&lt;/h2&gt;
+
+&lt;p&gt;To replicate updates, Dynamo uses something called a &lt;strong&gt;sloppy quorum&lt;/strong&gt;. This is in contrast to something like &lt;a href=&#34;../tldr-chubby&#34;&gt;Paxos&lt;/a&gt;, which relies on a strict quorum&amp;rsquo;s consensus to make progress. Instead of a strict majority, Dynamo lets you configure the number of nodes that need to acknowledge a read or a write before the client receives a response. It means that you don&amp;rsquo;t necessarily get the strict guarantees that Paxos provide, but you can get better latency and availability.&lt;/p&gt;
+
+&lt;p&gt;The main problem is that since a sloppy quorum isn&amp;rsquo;t a strict majority, your data can and will &lt;em&gt;diverge&lt;/em&gt;: it&amp;rsquo;s possible for two concurrent writes to the same key to be accepted by non-overlapping sets of nodes. Dynamo allows this, and resolves these conflicts at some other time. More on this later.&lt;/p&gt;
+
+&lt;p&gt;An interesting trick to increase availability is &lt;strong&gt;hinted handoff&lt;/strong&gt;: when a node is unreachable, another node can accept writes on its behalf. The write is then kept in a local buffer, and sent out once the destination node is reachable again. This is what makes Dynamo &lt;em&gt;always-writeable&lt;/em&gt;: even in the extreme case where only a single node is alive, write requests will still get accepted, and eventually processed.&lt;/p&gt;
+
+&lt;h2 id=&#34;gossip-protocol:007c64e27a60065cbcf00eb83e5f6197&#34;&gt;Gossip protocol&lt;/h2&gt;
+
+&lt;p&gt;Let&amp;rsquo;s say you have a cluster of a bunch of nodes that need to work together. One node goes down. How does everyone else find out? (Remember, we don&amp;rsquo;t have a leader node that can serve as the source of truth.)&lt;/p&gt;
+
+&lt;p&gt;The simplest way to do this is to have every node maintain &lt;a href=&#34;https://en.wikipedia.org/wiki/Heartbeat_(computing)&#34;&gt;heartbeats&lt;/a&gt; with every other node. When a node goes down, it&amp;rsquo;ll stop sending out heartbeats, and everyone else will find out immediately. But then &lt;code&gt;O(n^2)&lt;/code&gt; messages get sent every tick &amp;ndash; a ridiculously high amount, and obviously not feasible in any sizable cluster.&lt;/p&gt;
+
+&lt;p&gt;Instead, Dynamo uses a &lt;strong&gt;gossip protocol&lt;/strong&gt;. Every node keeps track of what it thinks the cluster looks like, i.e. which nodes are reachable, what key ranges they&amp;rsquo;re responsible for, and so on. (This is basically a copy of the hash ring.) Every tick, a node tries to contact one other node at random. If the other node is alive, the two nodes then exchange information, and both now see the same state.&lt;/p&gt;
+
+&lt;p&gt;This means that any new events will eventually propagate through the system. If there are no more changes to the cluster, then it is guaranteed that the system will eventually converge on the same state.&lt;/p&gt;
+
+&lt;h2 id=&#34;conflicts:007c64e27a60065cbcf00eb83e5f6197&#34;&gt;Conflicts&lt;/h2&gt;
+
+&lt;p&gt;This is where things get exciting. Sloppy quorum means that multiple conflicting values for the same key can exist in the system, and must be resolved somehow. There are few tricks that Dynamo uses.&lt;/p&gt;
+
+&lt;h3 id=&#34;vector-clocks:007c64e27a60065cbcf00eb83e5f6197&#34;&gt;Vector clocks&lt;/h3&gt;
+
+&lt;p&gt;Time is a tricky thing.&lt;/p&gt;
+
+&lt;p&gt;On a single machine, all you need to know about is the absolute or &lt;strong&gt;wall clock&lt;/strong&gt; time: suppose you perform a write to key &lt;code&gt;k&lt;/code&gt; with timestamp &lt;code&gt;t1&lt;/code&gt;, and then perform another write to &lt;code&gt;k&lt;/code&gt; with timestamp &lt;code&gt;t2&lt;/code&gt;. Since &lt;code&gt;t2 &amp;gt; t1&lt;/code&gt;, the second write must have been newer than the first write, and therefore the database can safely overwrite the original value. (&lt;em&gt;Note:&lt;/em&gt; This is a bit of an oversimplification that assumes the wall clock timestamp is monotonically increasing. In Linux, &lt;a href=&#34;http://man7.org/linux/man-pages/man2/gettimeofday.2.html&#34;&gt;&lt;code&gt;gettimeofday&lt;/code&gt;&lt;/a&gt; doesn&amp;rsquo;t actually provide this guarantee, but &lt;a href=&#34;http://man7.org/linux/man-pages/man2/clock_gettime.2.html&#34;&gt;&lt;code&gt;clock_gettime&lt;/code&gt; with the &lt;code&gt;CLOCK_MONOTONIC&lt;/code&gt; clock&lt;/a&gt; is supposed to.)&lt;/p&gt;
+
+&lt;p&gt;In a distributed system, this assumption doesn&amp;rsquo;t hold true. The problem is &lt;strong&gt;clock skew&lt;/strong&gt; &amp;ndash; different clocks tend to run at different rates, so you can&amp;rsquo;t assume that time &lt;code&gt;t&lt;/code&gt; on node &lt;code&gt;a&lt;/code&gt; happened before time &lt;code&gt;t + 1&lt;/code&gt; on node &lt;code&gt;b&lt;/code&gt;. The most practical techniques that help with synchronizing clocks, like &lt;a href=&#34;https://en.wikipedia.org/wiki/Network_Time_Protocol&#34;&gt;NTP&lt;/a&gt;, still don&amp;rsquo;t let you make the guarantee that every clock in a distributed system is synchronized at all times. So, without special hardware like GPS units and atomic clocks, just using wall clock timestamps is not enough.&lt;/p&gt;
+
+&lt;p&gt;So &amp;ndash; without a means of tight synchronization &amp;ndash; Dynamo uses something called a &lt;strong&gt;vector clock&lt;/strong&gt;. Basically, objects given a &lt;em&gt;version&lt;/em&gt; based on knowledge of causality (the &lt;strong&gt;happens-before relation&lt;/strong&gt;). Divergences can occur, and are resolved at read-time, either automatically by the server, or manually by the client. A very simplified example:&lt;/p&gt;
+
+&lt;ol&gt;
+&lt;li&gt;Node &lt;code&gt;A&lt;/code&gt; serves a write to key &lt;code&gt;k&lt;/code&gt;, with value &lt;code&gt;foo&lt;/code&gt;. It assigns it a version of (&lt;code&gt;A&lt;/code&gt;, 1). This write gets replicated to node &lt;code&gt;B&lt;/code&gt;.&lt;/li&gt;
+&lt;li&gt;A network partition occurs. &lt;code&gt;A&lt;/code&gt; and &lt;code&gt;B&lt;/code&gt; can&amp;rsquo;t talk to each other.&lt;/li&gt;
+&lt;li&gt;Node &lt;code&gt;A&lt;/code&gt; serves a write to key &lt;code&gt;k&lt;/code&gt;, with value &lt;code&gt;bar&lt;/code&gt;. It assigns it a version of (&lt;code&gt;A&lt;/code&gt;, 2). It can&amp;rsquo;t replicate it to node &lt;code&gt;B&lt;/code&gt;, but it gets stored in a hinted handoff buffer somewhere.&lt;/li&gt;
+&lt;li&gt;Node &lt;code&gt;B&lt;/code&gt; sees a write to key &lt;code&gt;k&lt;/code&gt;, with value &lt;code&gt;baz&lt;/code&gt;. It assigns it a version of (&lt;code&gt;B&lt;/code&gt;, 2). It can&amp;rsquo;t replicate it to node &lt;code&gt;A&lt;/code&gt;, but it gets stored in a hinted handoff buffer somewhere.&lt;/li&gt;
+&lt;li&gt;Node &lt;code&gt;A&lt;/code&gt; serves a read to key &lt;code&gt;k&lt;/code&gt;. It sees (&lt;code&gt;A&lt;/code&gt;, 1) and (&lt;code&gt;A&lt;/code&gt;, 2), but it can &lt;em&gt;automatically&lt;/em&gt; resolve this since it knows (&lt;code&gt;A&lt;/code&gt;, 2) is newer, so it returns &lt;code&gt;bar&lt;/code&gt;.&lt;/li&gt;
+&lt;li&gt;The network heals. Node &lt;code&gt;A&lt;/code&gt; and &lt;code&gt;B&lt;/code&gt; can talk to each other again.&lt;/li&gt;
+&lt;li&gt;Either node sees a read to key &lt;code&gt;k&lt;/code&gt;. It sees the same key with different versions (&lt;code&gt;A&lt;/code&gt;, 2) and (&lt;code&gt;B&lt;/code&gt;, 2), but it &lt;em&gt;doesn&amp;rsquo;t&lt;/em&gt; know which one is newer. It returns both, and tells the client to figure it out themselves and write the newer version back into the system.&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;h3 id=&#34;merkle-trees:007c64e27a60065cbcf00eb83e5f6197&#34;&gt;Merkle trees&lt;/h3&gt;
+
+&lt;p&gt;If a copy of a range falls significantly behind others, it might take a very long time to resolve conflicts using just vector clocks. It would be nice to be able to automatically resolve some conflicts in the background. To do this, we need to be able to quickly compare two copies of a range, and figure out exactly which parts are different.&lt;/p&gt;
+
+&lt;p&gt;A range can contain a lot of data. Naively splitting up the entire range for checksums not very infeasible; there&amp;rsquo;s simply too much data to be transferred.&lt;/p&gt;
+
+&lt;p&gt;Instead, Dynamo uses &lt;strong&gt;Merkle trees&lt;/strong&gt; to compare replicas of a range. A Merkle tree is a binary tree of hashes, where each internal node is the hash of its two children, and each leaf node is a hash of a portion of the original data. Comparing Merkle trees is conceptually simple:&lt;/p&gt;
+
+&lt;ol&gt;
+&lt;li&gt;Compare the root hashes of both trees.&lt;/li&gt;
+&lt;li&gt;If they&amp;rsquo;re equal, stop.&lt;/li&gt;
+&lt;li&gt;Recurse on the left and right children.&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;Ultimately, this means that replicas know exactly which parts of the range are different, but the amount of data exchanged is minimized.&lt;/p&gt;
+
+&lt;h3 id=&#34;crdts:007c64e27a60065cbcf00eb83e5f6197&#34;&gt;CRDTs&lt;/h3&gt;
+
+&lt;p&gt;All this complicated conflict resolution logic, and it turns out there&amp;rsquo;s an even simpler way to resolve conflicts: just don&amp;rsquo;t ever have them. Use a &lt;strong&gt;conflict-free replicated datatype&lt;/strong&gt;.&lt;/p&gt;
+
+&lt;p&gt;The main idea is this: if you can model the data as a series of &lt;em&gt;commutative&lt;/em&gt; changes, i.e. they can be applied in &lt;em&gt;any&lt;/em&gt; order and have the same result, then you don&amp;rsquo;t need any ordering guarantees in the system.&lt;/p&gt;
+
+&lt;p&gt;A shopping cart is a very good example: adding one item &lt;code&gt;A&lt;/code&gt; and then adding one item &lt;code&gt;B&lt;/code&gt; can be done from any nodes and in any order. (Removing from the shopping cart is modeled as a negative add.) The idea that any two nodes that have received the same set of updates will see the same state is called &lt;strong&gt;strong eventual consistency&lt;/strong&gt;.&lt;/p&gt;
+
+&lt;p&gt;Riak has a few &lt;a href=&#34;http://docs.basho.com/riak/kv/2.2.0/developing/data-types/&#34;&gt;built-in CRDTs&lt;/a&gt;.&lt;/p&gt;
+
+&lt;h3 id=&#34;last-write-wins:007c64e27a60065cbcf00eb83e5f6197&#34;&gt;Last write wins&lt;/h3&gt;
+
+&lt;p&gt;Unfortunately, CRDTs aren&amp;rsquo;t as easy as &amp;ldquo;just add commutative operations&amp;rdquo;. In practice, excepting very simple data structures, it&amp;rsquo;s generally pretty hard to model data as a CRDT. In many cases, it&amp;rsquo;s too much effort to do that, and client-side resolution is considered good enough.&lt;/p&gt;
+
+&lt;p&gt;Actually, in many cases, it&amp;rsquo;s even worse. Because it&amp;rsquo;s still pretty hard to reason about vector clocks, Dynamo systems generally offer ways to resolve these conflicts automatically on the server side. Riak and Cassandra deployments often use a simple policy: last write wins, based on the wall-clock timestamp.&lt;/p&gt;
+
+&lt;p&gt;Remember everything I mentioned above about clock skew? 😱&lt;/p&gt;
+
+&lt;p&gt;Wall-clock LWW is a really good way to lose data. If conflicting writes happen at around the same time, you&amp;rsquo;re &lt;em&gt;basically&lt;/em&gt; flipping a coin on which write to throw away. &lt;a href=&#34;https://aphyr.com/posts/299-the-trouble-with-timestamps&#34;&gt;Much&lt;/a&gt; &lt;a href=&#34;https://blog.discordapp.com/how-discord-stores-billions-of-messages-7fa6ec7ee4c7#.5uonqtiyc&#34;&gt;has&lt;/a&gt; &lt;a href=&#34;https://issues.apache.org/jira/browse/CASSANDRA-580&#34;&gt;been&lt;/a&gt; &lt;a href=&#34;https://aphyr.com/posts/285-jepsen-riak&#34;&gt;said&lt;/a&gt; &lt;a href=&#34;http://queue.acm.org/detail.cfm?id=2610533&#34;&gt;about&lt;/a&gt; &lt;a href=&#34;http://basho.com/posts/technical/clocks-are-bad-or-welcome-to-distributed-systems/&#34;&gt;this&lt;/a&gt;.&lt;/p&gt;
+
+&lt;h2 id=&#34;conclusion:007c64e27a60065cbcf00eb83e5f6197&#34;&gt;Conclusion&lt;/h2&gt;
+
+&lt;p&gt;I&amp;rsquo;ve mostly skipped a things that I thought were unnecessary, but I hope I&amp;rsquo;ve given a decent overview on how Dynamo (and systems inspired by it) works.&lt;/p&gt;
+
+&lt;p&gt;Dynamo is genuinely a brilliant piece of engineering. At Amazon&amp;rsquo;s scale, Dynamo&amp;rsquo;s optimizations for high availability probably made it a critical piece of infrastructure. But at the same time, in order to achieve its scalability and availability goals, it required significant sacrifices in terms of data model, features, and more importantly, safety.&lt;/p&gt;
+
+&lt;p&gt;Although Dynamo-like NoSQL systems were once poised to take over the world (of databases), the pendulum is swinging back. More and more engineering teams are going the &amp;ldquo;safer&amp;rdquo; route of sharding a relational database like PostgreSQL or MySQL. Furthermore, the success of &amp;ldquo;NewSQL&amp;rdquo; systems like &lt;a href=&#34;https://research.google.com/pubs/pub41344.html&#34;&gt;F1&lt;/a&gt; and &lt;a href=&#34;http://hstore.cs.brown.edu/&#34;&gt;H-Store&lt;/a&gt;/&lt;a href=&#34;https://www.voltdb.com/overviews&#34;&gt;VoltDB&lt;/a&gt; says that scalability and strong consistency are a false dichotomy &amp;ndash; it is in fact possible to have both the scalability of a NoSQL and the features and ACID correctness of a relational database.  I hope to talk more about them in future posts.&lt;/p&gt;
+</description>
+    </item>
     
     <item>
       <title>TL;DR: Chubby</title>
